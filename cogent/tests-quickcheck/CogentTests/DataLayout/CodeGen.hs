@@ -54,20 +54,45 @@ compileSanityCheck = do
     putStrLn "Cogent aligned range:"
     putStrLn $ show alignedBitRange
     putStrLn "Pretty C getter:"
-    pprint $ cExtDecl $ alignedRangeGetter (CStruct "boxType") alignedBitRange "getFoo"
+    pprint $ cExtDecl $ alignedRangeGetterSetter (CStruct "boxType") alignedBitRange "getFoo" Get
     putStrLn "Pretty C setter:"
-    pprint $ cExtDecl $ alignedRangeSetter (CStruct "boxType") alignedBitRange "setFoo"
+    pprint $ cExtDecl $ alignedRangeGetterSetter (CStruct "boxType") alignedBitRange "setFoo" Set
     putStrLn ""
   putStrLn "List of cogent aligned ranges:"
   putStrLn $ show alignedBitRangeExamples
   putStrLn "Pretty C getter:"
-  pprint $ cExtDecl $ composedAlignedRangeGetter (rangesToComposedRangeInput "get" alignedBitRangeExamples) (CStruct "boxType") (CIdent "embeddedType") "getFoo"
+  pprint $ cExtDecl $ composedAlignedRangeGetterSetter (rangesToComposedRangeInput "get" alignedBitRangeExamples) (CStruct "boxType") (CIdent "embeddedType") "getFoo" Get
   putStrLn "Pretty C setter:"
-  pprint $ cExtDecl $ composedAlignedRangeSetter (rangesToComposedRangeInput "set" alignedBitRangeExamples) (CStruct "boxType") (CIdent "embeddedType") "setFoo"
+  pprint $ cExtDecl $ composedAlignedRangeGetterSetter (rangesToComposedRangeInput "set" alignedBitRangeExamples) (CStruct "boxType") (CIdent "embeddedType") "setFoo" Set
   putStrLn ""
+  recordGetterSanityCheck
 
 
 
+
+
+
+recordFieldExamples =
+  [ [ ("field1", CVar "getSetField1" Nothing)
+    , ("field2", CVar "getSetField2" Nothing)]
+  
+  , [("field1", CVar "getSetField1" Nothing)]
+  
+  , []
+  ]
+
+
+recordGetterSanityCheck :: IO ()
+recordGetterSanityCheck = do
+  putStrLn "Printing examples of getters for embedded records:"
+  forM_ recordFieldExamples $ \recordFields -> do
+    putStrLn "Field names, getter/setter names:"
+    putStrLn $ show recordFields
+    putStrLn "Pretty C getter:"
+    pprint $ cExtDecl $ recordGetterSetter recordFields (CStruct "boxType") (CIdent "embeddedType") "getFoo" Get
+    putStrLn "Pretty C setter:"
+    pprint $ cExtDecl $ recordGetterSetter recordFields (CStruct "boxType") (CIdent "embeddedType") "setFoo" Set
+  putStrLn ""
     
 
 
