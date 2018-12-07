@@ -675,13 +675,13 @@ typing_var    : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto>w singleton (length
                    ; list_all2 (kinding K) ts K'
                    ; K' \<turnstile> TFun t u wellformed
                    ; K \<turnstile> \<Gamma> consumed
-                   \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> AFun f ts : instantiate ts (TFun t u)"
+                   \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> AFun f ts : TFun (instantiate ts t) (instantiate ts u)"
 
 | typing_fun    : "\<lbrakk> \<Xi>, K', [Some t] \<turnstile> f : u
                    ; K \<turnstile> \<Gamma> consumed
                    ; K' \<turnstile> t wellformed
                    ; list_all2 (kinding K) ts K'
-                   \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> Fun f ts : instantiate ts (TFun t u)"
+                   \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> Fun f ts : TFun (instantiate ts t) (instantiate ts u)"
 
 | typing_app    : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto> \<Gamma>1 | \<Gamma>2
                    ; \<Xi>, K, \<Gamma>1 \<turnstile> a : TFun x y
@@ -1367,6 +1367,14 @@ next
 qed simp+
 
 section {* Typing lemmas *}
+
+lemma typing_all_Cons1I:
+  assumes
+    "K \<turnstile> \<Gamma> \<leadsto> \<Gamma>1 | \<Gamma>2"
+    "\<exists>ta tsa. ts = ta # tsa \<and> \<Xi>, K, \<Gamma>1 \<turnstile>  e : ta \<and> \<Xi>, K, \<Gamma>2 \<turnstile>* es : tsa"
+  shows "\<Xi>, K, \<Gamma> \<turnstile>* (e # es) : ts"
+  using assms
+  by (force intro: typing_all_cons)
 
 lemma variant_elem_preservation:
   assumes tag_in_ts: "(tag, t, b) \<in> set ts"
