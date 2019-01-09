@@ -689,16 +689,6 @@ typing_var    : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto>w singleton (length
                    ; \<Xi>, K, \<Gamma>2 \<turnstile> b : x
                    \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> App a b : y"
 
-| typing_con    : "\<lbrakk> \<Xi>, K, \<Gamma> \<turnstile> x : t
-                   ; (tag, t', Unchecked) \<in> set ts
-                   ; K \<turnstile> t \<sqsubseteq> t'
-                   ; K \<turnstile> TSum ts' wellformed
-                   ; distinct (map fst ts)
-                   ; map fst ts = map fst ts'
-                   ; map (fst \<circ> snd) ts = map (fst \<circ> snd) ts'
-                   ; list_all2 (\<lambda>x y. snd (snd x) \<le> snd (snd y)) ts ts'
-                   \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> Con ts tag x : TSum ts'"
-
 | typing_cast   : "\<lbrakk> \<Xi>, K, \<Gamma> \<turnstile> e : TPrim (Num \<tau>)
                    ; upcast_valid \<tau> \<tau>'
                    \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> Cast \<tau>' e : TPrim (Num \<tau>')"
@@ -718,12 +708,22 @@ typing_var    : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto>w singleton (length
                    ; \<Xi>, K, (Some t # \<Gamma>2) \<turnstile> y : u
                    \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> Let x y : u"
 
-| typing_letb   : "\<lbrakk> split_bang K is \<Gamma> \<Gamma>1 \<Gamma>2
+| typing_letb   : "\<lbrakk> K , is \<turnstile> \<Gamma> \<leadsto>b \<Gamma>1 | \<Gamma>2
                    ; \<Xi>, K, \<Gamma>1 \<turnstile> x : t
                    ; \<Xi>, K, (Some t # \<Gamma>2) \<turnstile> y : u
                    ; K \<turnstile> t :\<kappa> k
                    ; E \<in> k
                    \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> LetBang is x y : u"
+
+| typing_con    : "\<lbrakk> \<Xi>, K, \<Gamma> \<turnstile> x : t
+                   ; (tag, t', Unchecked) \<in> set ts
+                   ; K \<turnstile> t \<sqsubseteq> t'
+                   ; K \<turnstile> TSum ts' wellformed
+                   ; distinct (map fst ts)
+                   ; map fst ts = map fst ts'
+                   ; map (fst \<circ> snd) ts = map (fst \<circ> snd) ts'
+                   ; list_all2 (\<lambda>x y. snd (snd x) \<le> snd (snd y)) ts ts'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> Con ts tag x : TSum ts'"
 
 | typing_case   : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto> \<Gamma>1 | \<Gamma>2
                    ; \<Xi>, K, \<Gamma>1 \<turnstile> x : TSum ts
@@ -763,7 +763,7 @@ typing_var    : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto>w singleton (length
                    ; K \<turnstile> TRecord ts s :\<kappa> k
                    ; S \<in> k
                    ; f < length ts
-                   ; ts ! f = (n, t, Present)
+                   ; ts ! f = (n, t, Present) (* TODO lookup by tag now? *)
                    \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> Member e f : t"
 
 | typing_take   : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto> \<Gamma>1 | \<Gamma>2
