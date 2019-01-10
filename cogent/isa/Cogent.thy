@@ -716,7 +716,8 @@ typing_var    : "\<lbrakk> K \<turnstile> \<Gamma> \<leadsto>w singleton (length
                    \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> \<turnstile> LetBang is x y : u"
 
 | typing_con    : "\<lbrakk> \<Xi>, K, \<Gamma> \<turnstile> x : t
-                   ; (tag, t, Unchecked) \<in> set ts
+                   ; (tag, t', Unchecked) \<in> set ts
+                   ; K \<turnstile> t \<sqsubseteq> t'
                    ; K \<turnstile> TSum ts' wellformed
                    ; distinct (map fst ts)
                    ; map fst ts = map fst ts'
@@ -1917,7 +1918,7 @@ next case (typing_fun \<Xi> K t f u \<Gamma> ks ts)
         typing_typing_all.typing_fun [simplified]
         instantiate_ctx_consumed)
 next
-  case (typing_con \<Xi> K \<Gamma> x t tag ts ts')
+  case (typing_con \<Xi> K \<Gamma> x t tag t' ts ts')
   then show ?case
   proof (clarsimp, intro typing_typing_all.intros)
        show "map (fst \<circ> snd) (map (\<lambda>(c, t, b). (c, instantiate \<delta> t, b)) ts) = map (fst \<circ> snd) (map (\<lambda>(c, t, b). (c, instantiate \<delta> t, b)) ts')"
@@ -1927,6 +1928,9 @@ next
   next show "K' \<turnstile> TSum (map (\<lambda>(c, t, b). (c, instantiate \<delta> t, b)) ts') wellformed"
       using typing_con
       by (fastforce intro: substitutivity instantiate_wellformed dest: list_all2_kinding_wellformedD list_all2_lengthD)
+  next show "K' \<turnstile> instantiate \<delta> t \<sqsubseteq> instantiate \<delta> t'"
+      using typing_con specialisation_subtyping subtyping_wellformed_preservation typing_to_wellformed
+      by blast
   qed (force intro: specialisation_subtyping substitutivity)+
 next case typing_esac then show ?case
     by (force intro!: typing_typing_all.typing_esac

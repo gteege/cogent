@@ -417,7 +417,8 @@ inductive ttyping :: "('f \<Rightarrow> poly_type) \<Rightarrow> kind env \<Righ
                     \<rbrakk> \<Longrightarrow> \<Xi>, K, \<Gamma> T\<turnstile> App a b : y"
 
 | ttyping_con    : "\<lbrakk> \<Xi>, K, \<Gamma> T\<turnstile> x : t
-                    ; (tag, t, Unchecked) \<in> set ts
+                    ; (tag, t', Unchecked) \<in> set ts
+                    ; K \<turnstile> t \<sqsubseteq> t'
                     ; K \<turnstile> TSum ts' wellformed
                     ; distinct (map fst ts)
                     ; map fst ts = map fst ts'
