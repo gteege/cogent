@@ -23,7 +23,6 @@ datatype ('f, 'a) vval = VPrim lit
                        | VFunction "'f expr" "type list"
                        | VAFunction "'f" "type list"
                        | VUnit
-                       | VPromote type "('f, 'a) vval"
 
 (* All polymorphic instantiations must have the _same_ value semantics. This means even if the C
 implementations differ they must all refine the same specification *)
@@ -141,6 +140,8 @@ inductive_cases v_sem_appE  [elim] : "\<xi> , \<gamma> \<turnstile> App a b \<Do
 locale value_sem =
   fixes abs_typing :: "'a \<Rightarrow> name \<Rightarrow> type list \<Rightarrow> bool"
   assumes abs_typing_bang : "abs_typing av n \<tau>s \<Longrightarrow> abs_typing av n (map bang \<tau>s)"
+  (* XXX: please check: this assumption corresponds to the premise in the subtyping rule for TCon (Cogent.thy) *)
+  assumes abs_typing_subty: "abs_typing av n \<tau>s \<Longrightarrow> list_all2 (subtyping []) \<tau>s \<tau>s' \<Longrightarrow> abs_typing av n \<tau>s'"
 
 context value_sem begin
 
@@ -182,10 +183,6 @@ and vval_typing_record :: "('f \<Rightarrow> poly_type) \<Rightarrow> ('f, 'a) v
                   \<rbrakk> \<Longrightarrow> \<Xi> \<turnstile> VFunction f ts :v TFun (instantiate ts t) (instantiate ts u)"
 
 | v_t_unit     : "\<Xi> \<turnstile> VUnit :v TUnit"
-
-| v_t_promote  : "\<lbrakk> \<Xi> \<turnstile> e :v t'
-                  ; [] \<turnstile> t \<sqsubseteq> t'
-                  \<rbrakk> \<Longrightarrow> \<Xi> \<turnstile> VPromote _ e :v t"
 
 | v_t_v_empty  : "\<Xi> \<turnstile>* [] :vr []"
 | v_t_v_cons1  : "\<lbrakk> \<Xi> \<turnstile> x :v t
@@ -255,9 +252,6 @@ proof (induct rule: vval_typing_vval_typing_variant_vval_typing_record.inducts)
 next case v_t_afun  then show ?case
     by (auto intro!: instantiate_wellformed dest!: typing_to_wellformed
         dest: list_all2_kinding_wellformedD list_all2_lengthD)
-next case v_t_promote then show ?case
-    using subtyping_wellformed_preservation
-    by blast
 qed (auto intro: supersumption simp add: kinding_simps dest: kinding_all_record'[simplified o_def])
 
 lemma vval_typing_bang:
@@ -273,11 +267,6 @@ next case v_t_r_cons2  then show ?case by (force intro: vval_typing_vval_typing_
                                                         bang_wellformed)
 next case v_t_v_cons2  then show ?case by (force intro: vval_typing_vval_typing_variant_vval_typing_record.intros
                                                         bang_wellformed)
-next
-  case (v_t_promote \<Xi> e t' K t)
-  then show ?case
-    by (force dest: subtyping_bang_preservation
-        intro: vval_typing_vval_typing_variant_vval_typing_record.intros)
 qed (force intro: vval_typing_vval_typing_variant_vval_typing_record.intros)+
 
 subsection {* vval_typing_record *}
@@ -375,6 +364,70 @@ proof -
       by (fastforce intro!: variant_tagged_list_update_wellformedI)
   qed simp+
 qed
+
+lemma value_subtyping:
+  "K \<turnstile> t \<sqsubseteq> t'
+  \<Longrightarrow> K = []
+  \<Longrightarrow> \<Xi> \<turnstile> v :v t
+  \<Longrightarrow> \<Xi> \<turnstile> v :v t'"
+proof (induct arbitrary: v rule: subtyping.induct)
+  case (subty_tcon n1 n2 s1 s2 K ts1 ts2)
+  then show ?case
+    apply -
+    apply (cases rule: vval_typing.cases, assumption; clarsimp)
+    apply (rule v_t_abstract)
+     apply (rule abs_typing_subty)
+      apply assumption
+    using list_all2_mono apply blast
+
+    proof -
+      fix a :: 'a
+      assume a1: "list_all2 (\<lambda>x1 x2. [] \<turnstile> x1 \<sqsubseteq> x2 \<and> (\<forall>x. \<Xi> \<turnstile> x :v x1 \<longrightarrow> \<Xi> \<turnstile> x :v x2)) ts1 ts2"
+      assume "v = VAbstract a"
+      assume "\<forall>x\<in>set ts1. type_wellformed 0 x"
+      have "\<forall>b. list_all2 (subtyping []) ts1 ts2 \<or> b"
+        using a1 list.rel_mono_strong by blast
+      then show "[] \<turnstile>* ts2 wellformed"
+        by (meson subty_tcon.prems(2) subtyping_simps(3) subtyping_wellformed_preservation(1) type_wellformed.simps(3) type_wellformed_all_pretty_def type_wellformed_pretty_def vval_typing_to_wellformed(1))
+    qed
+next
+case (subty_tfun K t2 t1 u1 u2)
+  then show ?case
+    apply -
+    apply (cases rule: vval_typing.cases, assumption; clarsimp)
+    (* I think this needs an explicit promotion operation or something. looks like this lemma false *)
+    sorry
+next
+  case (subty_trecord ts1 ts2 K s1 s2)
+  then show ?case
+    apply -
+    apply (cases rule: vval_typing.cases, assumption; clarsimp)
+    apply (rule v_t_record)
+    sorry
+next
+  case (subty_tprod K t1 t2 u1 u2)
+  then show ?case
+    apply -
+    apply (cases rule: vval_typing.cases, assumption; clarsimp)
+    apply (rule v_t_product)
+     apply auto
+    done
+next
+  case (subty_tsum ts1 ts2 K)
+  then show ?case
+    apply -
+    apply (cases rule: vval_typing.cases, assumption; clarsimp)
+    apply (rule v_t_sum)
+       apply auto
+    sorry
+qed auto
+
+(*
+  assumes subtype: "K \<turnstile> t \<sqsubseteq> t'"
+      and v_type: "\<Xi> \<turnstile> v :v t"
+  shows "\<Xi> \<turnstile> v :v t'"
+
+*)
 
 subsection {* Introductions under instantiations *}
 
@@ -605,7 +658,7 @@ assumes "list_all2 (kinding []) \<tau>s K"
 and     "proc_ctx_wellformed \<Xi>"
 and     "\<Xi> \<turnstile> \<gamma> matches (instantiate_ctx \<tau>s \<Gamma>)"
 and     "\<xi> matches \<Xi>"
-shows   "\<lbrakk> \<xi>, \<gamma> \<turnstile>  specialise \<tau>s e \<Down> v  ; \<Xi>, K, \<Gamma> \<turnstile>  e  : \<tau>  \<rbrakk> \<Longrightarrow> \<Xi> \<turnstile>  v  :v instantiate \<tau>s \<tau>"
+shows   "\<lbrakk> \<xi>, \<gamma> \<turnstile>  specialise \<tau>s e \<Down> v  ; \<Xi>, K, \<Gamma> \<turnstile>  e  : \<tau> \<rbrakk> \<Longrightarrow>  \<Xi> \<turnstile>  v  :v instantiate \<tau>s \<tau>"
 and     "\<lbrakk> \<xi>, \<gamma> \<turnstile>* map (specialise \<tau>s) es \<Down> vs ; \<Xi>, K, \<Gamma> \<turnstile>* es : \<tau>s' \<rbrakk> \<Longrightarrow> \<Xi> \<turnstile>* vs :v map (instantiate \<tau>s) \<tau>s'"
 using assms proof (induct "specialise \<tau>s e"        v
                       and "map (specialise \<tau>s) es" vs
