@@ -28,120 +28,15 @@ datatype ('f, 'a) vval = VPrim lit
 implementations differ they must all refine the same specification *)
 type_synonym ('f, 'a) vabsfuns = "'f \<Rightarrow> ('f, 'a) vval \<Rightarrow> ('f,'a) vval \<Rightarrow> bool"
 
-definition eval_prim :: "prim_op \<Rightarrow> ('f, 'a) vval list \<Rightarrow> ('f, 'a) vval"
-where
-  "eval_prim pop xs = VPrim (eval_prim_op pop (map (\<lambda>vv. case vv of VPrim v \<Rightarrow> v | _ \<Rightarrow> LBool False) xs))"
-
-(* NOTE: Termination is currently not provable with this approach. It's possible to show
-   it for v_sem assuming all called functions are terminating, but proving
-   this assumption would in turn require termination of v_sem.
-
-   Fixing this problem is nontrivial, and will likely necessitate changes to the design.
-*)
-
-
-inductive v_sem :: "('f,'a) vabsfuns \<Rightarrow> ('f, 'a) vval env \<Rightarrow> 'f expr \<Rightarrow> ('f, 'a) vval \<Rightarrow> bool"
-          ("_ , _ \<turnstile> _ \<Down> _" [30,0,0,20] 60)
-and       v_sem_all  :: "('f,'a) vabsfuns \<Rightarrow> ('f, 'a) vval list \<Rightarrow> 'f expr list \<Rightarrow> ('f, 'a) vval list \<Rightarrow> bool"
-          ("_ , _ \<turnstile>* _ \<Down> _" [30,0,0,20] 60)
-where
-  v_sem_var     : "\<xi> , \<gamma> \<turnstile> (Var i) \<Down> (\<gamma> ! i)"
-
-| v_sem_lit     : "\<xi> , \<gamma> \<turnstile> (Lit l) \<Down> VPrim l"
-
-| v_sem_prim    : "\<lbrakk> \<xi> , \<gamma> \<turnstile>* as \<Down> as'
-                   \<rbrakk> \<Longrightarrow>  \<xi> , \<gamma> \<turnstile> (Prim p as) \<Down> eval_prim p as'"
-
-| v_sem_fun     : "\<xi> , \<gamma> \<turnstile> Fun f ts \<Down> VFunction f ts"
-
-| v_sem_afun     : "\<xi> , \<gamma> \<turnstile> AFun f ts \<Down> VAFunction f ts"
-
-| v_sem_abs_app : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VAFunction f ts
-                   ; \<xi> , \<gamma> \<turnstile> y \<Down> a
-                   ; \<xi> f a r
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> (App x y) \<Down> r"
-
-| v_sem_cast    : "\<lbrakk> \<xi> , \<gamma> \<turnstile> e \<Down> VPrim l
-                   ; cast_to \<tau> l = Some l'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Cast \<tau> e \<Down> VPrim l'"
-
-| v_sem_app     : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VFunction e ts
-                   ; \<xi> , \<gamma> \<turnstile> y \<Down> a
-                   ; \<xi> , [ a ] \<turnstile> specialise ts e \<Down> r
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> (App x y) \<Down> r"
-
-| v_sem_con     : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> x'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> (Con _ t x) \<Down> VSum t x'"
-
-| v_sem_member  : "\<lbrakk> \<xi> , \<gamma> \<turnstile> e \<Down> VRecord fs
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Member e f \<Down> fs ! f"
-
-| v_sem_unit    : "\<xi> , \<gamma> \<turnstile> Unit \<Down> VUnit"
-
-| v_sem_tuple   : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> x'
-                   ; \<xi> , \<gamma> \<turnstile> y \<Down> y'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> (Tuple x y) \<Down> VProduct x' y'"
-
-| v_sem_esac    : "\<lbrakk> \<xi> , \<gamma> \<turnstile> t \<Down> VSum ts v
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Esac t \<Down> v"
-
-| v_sem_let     : "\<lbrakk> \<xi> , \<gamma> \<turnstile> a \<Down> a'
-                   ; \<xi> , (a' # \<gamma>) \<turnstile> b \<Down> b'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Let a b \<Down> b'"
-
-| v_sem_letbang : "\<lbrakk> \<xi> , \<gamma> \<turnstile> a \<Down> a'
-                   ; \<xi> , (a' # \<gamma>) \<turnstile> b \<Down> b'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> LetBang vs a b \<Down> b'"
-
-| v_sem_case_m  : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VSum t v
-                   ; \<xi> , (v # \<gamma>) \<turnstile> m \<Down> m'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Case x t m n \<Down> m'"
-
-| v_sem_case_nm : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VSum t' v
-                   ; t \<noteq> t'
-                   ; \<xi> , (VSum t' v # \<gamma>) \<turnstile> n \<Down> n'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Case x t m n \<Down> n'"
-
-| v_sem_if      : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VPrim (LBool b)
-                   ; \<xi> , \<gamma> \<turnstile> if b then t else e \<Down> r
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> If x t e \<Down> r"
-
-| v_sem_struct  : "\<lbrakk> \<xi> , \<gamma> \<turnstile>* xs \<Down> vs
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Struct ts xs \<Down> VRecord vs"
-
-| v_sem_take    : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VRecord fs
-                   ; \<xi> , (fs ! f # VRecord fs # \<gamma>) \<turnstile> e \<Down> e'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Take x f e \<Down> e'"
-
-| v_sem_put     : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VRecord fs
-                   ; \<xi> , \<gamma> \<turnstile> e \<Down> e'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Put x f e \<Down> VRecord (fs [ f := e' ])"
-
-| v_sem_split   : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> VProduct a b
-                   ; \<xi> , (a # b # \<gamma>) \<turnstile> e \<Down> e'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Split x e \<Down> e'"
-
-| v_sem_promote : "\<lbrakk> \<xi> , \<gamma> \<turnstile> e \<Down> e'
-                   \<rbrakk> \<Longrightarrow> \<xi> , \<gamma> \<turnstile> Promote t e \<Down> e'"
-
-
-| v_sem_all_empty : "\<xi> , \<gamma> \<turnstile>* [] \<Down> []"
-
-| v_sem_all_cons  : "\<lbrakk> \<xi> , \<gamma> \<turnstile> x \<Down> v
-                     ; \<xi> , \<gamma> \<turnstile>* xs \<Down> vs
-                     \<rbrakk> \<Longrightarrow>  \<xi> , \<gamma> \<turnstile>* (x # xs) \<Down> (v # vs)"
-
-inductive_cases v_sem_varE  [elim] : "\<xi> , \<gamma> \<turnstile> Var i \<Down> v"
-inductive_cases v_sem_funE  [elim] : "\<xi> , \<gamma> \<turnstile> Fun f ts \<Down> v"
-inductive_cases v_sem_afunE [elim] : "\<xi> , \<gamma> \<turnstile> AFun f ts \<Down> v"
-inductive_cases v_sem_appE  [elim] : "\<xi> , \<gamma> \<turnstile> App a b \<Down> v"
-
 
 locale value_sem =
   fixes abs_typing :: "'a \<Rightarrow> name \<Rightarrow> type list \<Rightarrow> bool"
   assumes abs_typing_bang : "abs_typing av n \<tau>s \<Longrightarrow> abs_typing av n (map bang \<tau>s)"
-  (* XXX: please check: this assumption corresponds to the premise in the subtyping rule for TCon (Cogent.thy) *)
-  assumes abs_typing_subty: "abs_typing av n \<tau>s \<Longrightarrow> list_all2 (subtyping []) \<tau>s \<tau>s' \<Longrightarrow> abs_typing av n \<tau>s'"
+  (* XXX: Please check: this assumption corresponds to the premise in the subtyping rule for TCon (Cogent.thy).
+      The subty_tcon implies that all abstract types are covariant in their type parameters, but wouldn't a lot of mutable data structures be invariant? 
+      Although the kind environment is forall K, I expect the abs_typing judgment would only hold for concrete types,
+      thus effectively restricting this to an empty kind environment. *)
+  assumes abs_typing_subty: "abs_typing av n \<tau>s \<Longrightarrow> list_all2 (subtyping K) \<tau>s \<tau>s' \<Longrightarrow> abs_typing av n \<tau>s'"
 
 context value_sem begin
 
@@ -365,13 +260,19 @@ proof -
   qed simp+
 qed
 
-lemma value_subtyping:
+
+lemma value_subtyping_to_wellformed:
   "K \<turnstile> t \<sqsubseteq> t'
-  \<Longrightarrow> K = []
+  \<Longrightarrow> \<Xi> \<turnstile> v :v t
+  \<Longrightarrow> K \<turnstile> t' wellformed"
+  by (metis instantiate_nothing kinding_iff_wellformed(1) list_all2_Nil substitutivity_single subtyping_wellformed_preservation(1) vval_typing_to_wellformed(1))
+
+lemma value_subtyping:
+  "[] \<turnstile> t \<sqsubseteq> t'
   \<Longrightarrow> \<Xi> \<turnstile> v :v t
   \<Longrightarrow> \<Xi> \<turnstile> v :v t'"
-proof (induct arbitrary: v rule: subtyping.induct)
-  case (subty_tcon n1 n2 s1 s2 K ts1 ts2)
+proof (induct "([] :: kind env)" t t' arbitrary: v rule: subtyping.induct)
+  case (subty_tcon n1 n2 s1 s2 ts1 ts2)
   then show ?case
     apply -
     apply (cases rule: vval_typing.cases, assumption; clarsimp)
@@ -379,33 +280,32 @@ proof (induct arbitrary: v rule: subtyping.induct)
      apply (rule abs_typing_subty)
       apply assumption
     using list_all2_mono apply blast
-
     proof -
-      fix a :: 'a
       assume a1: "list_all2 (\<lambda>x1 x2. [] \<turnstile> x1 \<sqsubseteq> x2 \<and> (\<forall>x. \<Xi> \<turnstile> x :v x1 \<longrightarrow> \<Xi> \<turnstile> x :v x2)) ts1 ts2"
-      assume "v = VAbstract a"
       assume "\<forall>x\<in>set ts1. type_wellformed 0 x"
       have "\<forall>b. list_all2 (subtyping []) ts1 ts2 \<or> b"
         using a1 list.rel_mono_strong by blast
       then show "[] \<turnstile>* ts2 wellformed"
-        by (meson subty_tcon.prems(2) subtyping_simps(3) subtyping_wellformed_preservation(1) type_wellformed.simps(3) type_wellformed_all_pretty_def type_wellformed_pretty_def vval_typing_to_wellformed(1))
+        by (meson subty_tcon.prems subtyping_simps(3) subtyping_wellformed_preservation(1) type_wellformed.simps(3) type_wellformed_all_pretty_def type_wellformed_pretty_def vval_typing_to_wellformed(1))
     qed
 next
 case (subty_tfun K t2 t1 u1 u2)
   then show ?case
     apply -
     apply (cases rule: vval_typing.cases, assumption; clarsimp)
-    (* I think this needs an explicit promotion operation or something. looks like this lemma false *)
+    (* this case doesn't hold because the constructor for function values has explicit types attached. the types are different. *)
+    (* I think this needs an explicit promotion operation or something. *)
     sorry
 next
-  case (subty_trecord ts1 ts2 K s1 s2)
+  case (subty_trecord ts1 ts2 s1 s2)
   then show ?case
     apply -
     apply (cases rule: vval_typing.cases, assumption; clarsimp)
     apply (rule v_t_record)
+      (* this case doesn't hold because the fields might be in different orders in ts1 and ts2 *)
     sorry
 next
-  case (subty_tprod K t1 t2 u1 u2)
+  case (subty_tprod t1 t2 u1 u2)
   then show ?case
     apply -
     apply (cases rule: vval_typing.cases, assumption; clarsimp)
@@ -413,21 +313,28 @@ next
      apply auto
     done
 next
-  case (subty_tsum ts1 ts2 K)
+  case (subty_tsum ts1 ts2)
+  assume "\<Xi> \<turnstile> v :v TSum ts1"
   then show ?case
-    apply -
-    apply (cases rule: vval_typing.cases, assumption; clarsimp)
-    apply (rule v_t_sum)
-       apply auto
-    sorry
+  proof (cases rule: vval_typing.cases)
+    case (v_t_sum a t g)
+    have "\<exists>t' b'. (g,t',b') \<in> set ts2"
+      by (metis (no_types, hide_lams) fst_conv image_iff local.v_t_sum(3) old.prod.exhaust subty_tsum.hyps(4))
+    then obtain t' b' where "(g,t',b') \<in> set ts2"
+      by auto
+    have "b' = Unchecked"
+      using \<open>(g, t', b') \<in> set ts2\<close> less_eq_variant_state.simps(3) local.v_t_sum(3) subty_tsum.hyps(1) variant_state.exhaust by blast
+    have "\<Xi> \<turnstile> a :v t'"
+      using \<open>(g, t', b') \<in> set ts2\<close> local.v_t_sum(2) local.v_t_sum(3) subty_tsum.hyps(1) by blast
+    have "(g, t', Unchecked) \<in> set ts2"
+      using \<open>(g, t', b') \<in> set ts2\<close> \<open>b' = Unchecked\<close> by auto
+    have "[] \<turnstile> TSum ts2 wellformed"
+      by (metis (mono_tags, lifting) value_subtyping_to_wellformed subty_tsum.hyps(1) subty_tsum.hyps(2) subty_tsum.hyps(3) subty_tsum.hyps(4) subty_tsum.prems subtyping.subty_tsum)
+    then show ?thesis
+      using \<open>(g, t', Unchecked) \<in> set ts2\<close> \<open>\<Xi> \<turnstile> a :v t'\<close> local.v_t_sum(1) subty_tsum.hyps(3) value_sem.v_t_sum value_sem_axioms by blast
+  qed
 qed auto
 
-(*
-  assumes subtype: "K \<turnstile> t \<sqsubseteq> t'"
-      and v_type: "\<Xi> \<turnstile> v :v t"
-  shows "\<Xi> \<turnstile> v :v t'"
-
-*)
 
 subsection {* Introductions under instantiations *}
 
@@ -625,8 +532,178 @@ using assms by ( clarsimp simp: proc_env_matches_def
                , drule_tac x = f in spec
                , auto)
 
+section {* Semantics *}
+
+definition eval_prim :: "prim_op \<Rightarrow> ('f, 'a) vval list \<Rightarrow> ('f, 'a) vval"
+where
+  "eval_prim pop xs = VPrim (eval_prim_op pop (map (\<lambda>vv. case vv of VPrim v \<Rightarrow> v | _ \<Rightarrow> LBool False) xs))"
+
+(* NOTE: Termination is currently not provable with this approach. It's possible to show
+   it for v_sem assuming all called functions are terminating, but proving
+   this assumption would in turn require termination of v_sem.
+
+   Fixing this problem is nontrivial, and will likely necessitate changes to the design.
+*)
+
+
+inductive v_promote :: "('f \<Rightarrow> poly_type) \<Rightarrow> ('f, 'a) vval \<Rightarrow> type \<Rightarrow> ('f, 'a) vval \<Rightarrow> type \<Rightarrow> bool"
+(* and       v_promote_all  :: "('f,'a) vabsfuns \<Rightarrow> ('f, 'a) vval list \<Rightarrow> type list \<Rightarrow> ('f, 'a) vval list \<Rightarrow> type list \<Rightarrow> bool"*)
+where
+  v_promote_prim       : "\<lbrakk> t = lit_type p \<rbrakk> \<Longrightarrow> v_promote \<Xi> (VPrim p) (TPrim t) (VPrim p) (TPrim t)"
+| v_promote_product    : "\<lbrakk> v_promote \<Xi> a ta a' ta'
+                          ; v_promote \<Xi> b tb b' tb'
+                          \<rbrakk> \<Longrightarrow> v_promote \<Xi> (VProduct a b) (TProduct ta tb) (VProduct a' b') (TProduct ta' tb')"
+| v_promote_sum        : "\<lbrakk> [] \<turnstile> TSum ts1 \<sqsubseteq> TSum ts2
+                          ; (n,t,Unchecked) \<in> set ts1
+                          ; (n,t',Unchecked) \<in> set ts2
+                          ; v_promote \<Xi> v t v' t'
+                          \<rbrakk> \<Longrightarrow> v_promote \<Xi> (VSum n v) (TSum ts1) (VSum n v') (TSum ts2)"
+| v_promote_record    : "\<lbrakk> [] \<turnstile> TRecord ts1 s1 \<sqsubseteq> TRecord ts2 s2
+                         ; \<And>n v v' t t' b b'. \<lbrakk> ((n,t,b),v) \<in> set (zip ts1 fs); ((n,t',b'),v') \<in> set (zip ts2 fs')\<rbrakk> \<Longrightarrow> v_promote \<Xi> v t v' t'
+                         \<rbrakk> \<Longrightarrow> v_promote \<Xi> (VRecord fs) (TRecord ts1 s1) (VRecord fs') (TRecord ts2 s2)"
+(* Abstract promotion: see abs_typing_subty assumption below *)
+| v_promote_abstract  : "\<lbrakk> list_all2 (subtyping K) ts1 ts2
+                         \<rbrakk> \<Longrightarrow> v_promote \<Xi> (VAbstract a) (TCon n ts1 s) (VAbstract a) (TCon n ts2 s)"
+| v_promote_function  : "\<lbrakk> \<Xi> \<turnstile> VFunction f ts1 :v t1
+                         ; \<Xi> \<turnstile> VFunction f ts2 :v t2
+                         ; [] \<turnstile> t1 \<sqsubseteq> t2
+                         \<rbrakk> \<Longrightarrow> v_promote \<Xi> (VFunction f ts1) t1 (VFunction f ts2) t2"
+| v_promote_afun      : "\<lbrakk> \<Xi> \<turnstile> VAFunction f ts1 :v t1
+                         ; \<Xi> \<turnstile> VAFunction f ts2 :v t2
+                         ; [] \<turnstile> t1 \<sqsubseteq> t2
+                         \<rbrakk> \<Longrightarrow> v_promote \<Xi> (VAFunction f ts1) t1 (VAFunction f ts2) t2"
+| v_promote_unit      : "v_promote \<Xi> VUnit TUnit VUnit TUnit"
+
+
+inductive v_sem :: "('f \<Rightarrow> poly_type) \<Rightarrow> ('f,'a) vabsfuns \<Rightarrow> ('f, 'a) vval env \<Rightarrow> 'f expr \<Rightarrow> ('f, 'a) vval \<Rightarrow> bool"
+          ("_, _ , _ \<turnstile> _ \<Down> _" [30,0,0,0,20] 60)
+and       v_sem_all  :: "('f \<Rightarrow> poly_type) \<Rightarrow>('f,'a) vabsfuns \<Rightarrow> ('f, 'a) vval list \<Rightarrow> 'f expr list \<Rightarrow> ('f, 'a) vval list \<Rightarrow> bool"
+          ("_, _ , _ \<turnstile>* _ \<Down> _" [30,0,0,0,20] 60)
+where
+  v_sem_var     : "\<Xi>, \<xi> , \<gamma> \<turnstile> (Var i) \<Down> (\<gamma> ! i)"
+
+| v_sem_lit     : "\<Xi>, \<xi> , \<gamma> \<turnstile> (Lit l) \<Down> VPrim l"
+
+| v_sem_prim    : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile>* as \<Down> as'
+                   \<rbrakk> \<Longrightarrow>  \<Xi>, \<xi> , \<gamma> \<turnstile> (Prim p as) \<Down> eval_prim p as'"
+
+| v_sem_fun     : "\<Xi>, \<xi> , \<gamma> \<turnstile> Fun f ts \<Down> VFunction f ts"
+
+| v_sem_afun     : "\<Xi>, \<xi> , \<gamma> \<turnstile> AFun f ts \<Down> VAFunction f ts"
+
+| v_sem_abs_app : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VAFunction f ts
+                   ; \<Xi>, \<xi> , \<gamma> \<turnstile> y \<Down> a
+                   ; \<xi> f a r
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> (App x y) \<Down> r"
+
+| v_sem_cast    : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> e \<Down> VPrim l
+                   ; cast_to \<tau> l = Some l'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Cast \<tau> e \<Down> VPrim l'"
+
+| v_sem_app     : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VFunction e ts
+                   ; \<Xi>, \<xi> , \<gamma> \<turnstile> y \<Down> a
+                   ; \<Xi>, \<xi> , [ a ] \<turnstile> specialise ts e \<Down> r
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> (App x y) \<Down> r"
+
+| v_sem_con     : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> x'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> (Con _ t x) \<Down> VSum t x'"
+
+| v_sem_member  : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> e \<Down> VRecord fs
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Member e f \<Down> fs ! f"
+
+| v_sem_unit    : "\<Xi>, \<xi> , \<gamma> \<turnstile> Unit \<Down> VUnit"
+
+| v_sem_tuple   : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> x'
+                   ; \<Xi>, \<xi> , \<gamma> \<turnstile> y \<Down> y'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> (Tuple x y) \<Down> VProduct x' y'"
+
+| v_sem_esac    : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> t \<Down> VSum ts v
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Esac t \<Down> v"
+
+| v_sem_let     : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> a \<Down> a'
+                   ; \<Xi>, \<xi> , (a' # \<gamma>) \<turnstile> b \<Down> b'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Let a b \<Down> b'"
+
+| v_sem_letbang : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> a \<Down> a'
+                   ; \<Xi>, \<xi> , (a' # \<gamma>) \<turnstile> b \<Down> b'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> LetBang vs a b \<Down> b'"
+
+| v_sem_case_m  : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VSum t v
+                   ; \<Xi>, \<xi> , (v # \<gamma>) \<turnstile> m \<Down> m'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Case x t m n \<Down> m'"
+
+| v_sem_case_nm : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VSum t' v
+                   ; t \<noteq> t'
+                   ; \<Xi>, \<xi> , (VSum t' v # \<gamma>) \<turnstile> n \<Down> n'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Case x t m n \<Down> n'"
+
+| v_sem_if      : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VPrim (LBool b)
+                   ; \<Xi>, \<xi> , \<gamma> \<turnstile> if b then t else e \<Down> r
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> If x t e \<Down> r"
+
+| v_sem_struct  : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile>* xs \<Down> vs
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Struct ts xs \<Down> VRecord vs"
+
+| v_sem_take    : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VRecord fs
+                   ; \<Xi>, \<xi> , (fs ! f # VRecord fs # \<gamma>) \<turnstile> e \<Down> e'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Take x f e \<Down> e'"
+
+| v_sem_put     : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VRecord fs
+                   ; \<Xi>, \<xi> , \<gamma> \<turnstile> e \<Down> e'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Put x f e \<Down> VRecord (fs [ f := e' ])"
+
+| v_sem_split   : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> VProduct a b
+                   ; \<Xi>, \<xi> , (a # b # \<gamma>) \<turnstile> e \<Down> e'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Split x e \<Down> e'"
+
+| v_sem_promote : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> e \<Down> e'
+                   ; \<Xi> \<turnstile> e' :v t
+                   ; v_promote \<Xi> e' t e'' t'
+                   \<rbrakk> \<Longrightarrow> \<Xi>, \<xi> , \<gamma> \<turnstile> Promote t' e \<Down> e''"
+
+
+| v_sem_all_empty : "\<Xi>, \<xi> , \<gamma> \<turnstile>* [] \<Down> []"
+
+| v_sem_all_cons  : "\<lbrakk> \<Xi>, \<xi> , \<gamma> \<turnstile> x \<Down> v
+                     ; \<Xi>, \<xi> , \<gamma> \<turnstile>* xs \<Down> vs
+                     \<rbrakk> \<Longrightarrow>  \<Xi>, \<xi> , \<gamma> \<turnstile>* (x # xs) \<Down> (v # vs)"
+
+inductive_cases v_sem_varE  [elim] : "\<Xi>, \<xi> , \<gamma> \<turnstile> Var i \<Down> v"
+inductive_cases v_sem_funE  [elim] : "\<Xi>, \<xi> , \<gamma> \<turnstile> Fun f ts \<Down> v"
+inductive_cases v_sem_afunE [elim] : "\<Xi>, \<xi> , \<gamma> \<turnstile> AFun f ts \<Down> v"
+inductive_cases v_sem_appE  [elim] : "\<Xi>, \<xi> , \<gamma> \<turnstile> App a b \<Down> v"
+
 
 section {* Type Safety *}
+
+lemma value_promotion:
+  "v_promote \<Xi> v t v' t'
+  \<Longrightarrow> [] \<turnstile> t \<sqsubseteq> t'
+  \<Longrightarrow> \<Xi> \<turnstile> v :v t
+  \<Longrightarrow> \<Xi> \<turnstile> v' :v t'"
+proof (induct rule: v_promote.induct)
+  case (v_promote_product \<Xi> a ta a' ta' b tb b' tb')
+  assume "\<Xi> \<turnstile> VProduct a b :v TProduct ta tb"
+  then show ?case
+    apply (cases)
+    apply (rule v_t_product)
+    using subtyping_simps(7) v_promote_product.hyps(2) v_promote_product.prems(1) apply blast
+    using subtyping_simps(7) v_promote_product.hyps(4) v_promote_product.prems(1) apply blast
+    done
+next
+  case (v_promote_sum ts1 ts2 n t t' \<Xi> v v')
+  then show ?case
+    by (metis Pair_inject distinct_fst subtyping_simps(8) subtyping_wellformed_preservation(1) value_sem.v_t_sum value_sem.v_t_sumE' value_sem_axioms vval.inject(3) vval_typing_to_wellformed(1))
+next
+  case (v_promote_record ts1 s1 ts2 s2 fs fs' \<Xi>)
+  then show ?case
+    sorry
+next
+  case (v_promote_abstract K ts1 ts2 \<Xi> a n s)
+  then show ?case
+    using value_subtyping by blast
+qed blast
+
 
 theorem progress:
 assumes "\<Xi>, K, \<Gamma> \<turnstile> e : \<tau>"
@@ -658,8 +735,8 @@ assumes "list_all2 (kinding []) \<tau>s K"
 and     "proc_ctx_wellformed \<Xi>"
 and     "\<Xi> \<turnstile> \<gamma> matches (instantiate_ctx \<tau>s \<Gamma>)"
 and     "\<xi> matches \<Xi>"
-shows   "\<lbrakk> \<xi>, \<gamma> \<turnstile>  specialise \<tau>s e \<Down> v  ; \<Xi>, K, \<Gamma> \<turnstile>  e  : \<tau> \<rbrakk> \<Longrightarrow>  \<Xi> \<turnstile>  v  :v instantiate \<tau>s \<tau>"
-and     "\<lbrakk> \<xi>, \<gamma> \<turnstile>* map (specialise \<tau>s) es \<Down> vs ; \<Xi>, K, \<Gamma> \<turnstile>* es : \<tau>s' \<rbrakk> \<Longrightarrow> \<Xi> \<turnstile>* vs :v map (instantiate \<tau>s) \<tau>s'"
+shows   "\<lbrakk> \<Xi>, \<xi>, \<gamma> \<turnstile>  specialise \<tau>s e \<Down> v  ; \<Xi>, K, \<Gamma> \<turnstile>  e  : \<tau> \<rbrakk> \<Longrightarrow>  \<Xi> \<turnstile>  v  :v instantiate \<tau>s \<tau>"
+and     "\<lbrakk> \<Xi>, \<xi>, \<gamma> \<turnstile>* map (specialise \<tau>s) es \<Down> vs ; \<Xi>, K, \<Gamma> \<turnstile>* es : \<tau>s' \<rbrakk> \<Longrightarrow> \<Xi> \<turnstile>* vs :v map (instantiate \<tau>s) \<tau>s'"
 using assms proof (induct "specialise \<tau>s e"        v
                       and "map (specialise \<tau>s) es" vs
                       arbitrary: e  \<tau>s K \<tau>   \<Gamma>
@@ -679,7 +756,7 @@ next case v_sem_afun    then show ?case by ( case_tac e, simp_all
                                            , fastforce intro: v_t_afun_instantiate simp add: kinding_simps)
 next case v_sem_fun     then show ?case by ( case_tac e, simp_all
                                            , fastforce intro: v_t_function_instantiate)
-next case (v_sem_con \<xi> \<gamma> x_spec x' ts_inst tag)
+next case (v_sem_con \<Xi> \<xi> \<gamma> x_spec x' ts_inst tag)
   then show ?case
   proof (cases e)
     case (Con ts tag' x)
@@ -741,7 +818,7 @@ next case v_sem_case_m  then show ?case by ( case_tac e, simp_all
                                            , fastforce intro: matches_split
                                                               matches_cons [simplified]
                                                        dest:  distinct_fst)
-next case (v_sem_case_nm \<xi> \<gamma> x tag' v tag n n' m)
+next case (v_sem_case_nm \<Xi> \<xi> \<gamma> x tag' v tag n n' m)
   from v_sem_case_nm.hyps(6)
   show ?case
   proof (case_tac e; clarsimp)
@@ -780,7 +857,7 @@ next case (v_sem_case_nm \<xi> \<gamma> x tag' v tag n n' m)
       by blast
   qed
 next
-  case (v_sem_esac \<xi> \<gamma> spec_a tag v)
+  case (v_sem_esac \<Xi> \<xi> \<gamma> spec_a tag v)
   then show ?case
   proof (cases e)
     case (Esac a)
@@ -825,7 +902,7 @@ next case v_sem_struct  then show ?case by ( case_tac e, simp_all
                                                               vval_typing_all_record [ where ts = "map f ts" for f ts
                                                                                      , simplified])
 next
-  case (v_sem_take \<xi> \<gamma> spec_x fs f' spec_y e')
+  case (v_sem_take \<Xi> \<xi> \<gamma> spec_x fs f' spec_y e')
   then show ?case
   proof (cases e)
     case (Take x f y)
@@ -870,7 +947,7 @@ next
       by (fastforce intro!: v_sem_take.hyps(4) simp add: matches_Cons vval_typing_record_nth)
   qed simp+
 next
-  case (v_sem_put \<xi> \<gamma> x_spec fs ea_spec ea' f)
+  case (v_sem_put \<Xi> \<xi> \<gamma> x_spec fs ea_spec ea' f)
   
   then show ?case
   proof (case_tac e; clarsimp)
@@ -921,7 +998,7 @@ next
 next case v_sem_split   then show ?case by ( case_tac e, simp_all
                                            , fastforce intro!: matches_cons
                                                        intro:  matches_split)
-next case (v_sem_app \<xi> \<gamma> x ea ts y a r e \<tau>s K \<tau> \<Gamma>)
+next case (v_sem_app \<Xi> \<xi> \<gamma> x ea ts y a r e \<tau>s K \<tau> \<Gamma>)
 note IH1  = this(2)
 and  IH2  = this(4)
 and  IH3  = this(6)
@@ -951,8 +1028,10 @@ next case v_sem_all_cons  then show ?case by ( case_tac es, simp_all
                                              , fastforce simp: vval_typing_all_def
                                                          dest: matches_split)
 next
-  case (v_sem_promote \<xi> \<gamma> ea ea' t)
+  case (v_sem_promote \<Xi> \<xi> \<gamma> ea ea' t)
   then show ?case
+    using value_promotion  sledgehammer
+
     apply clarsimp
     apply (drule meta_spec)+
     apply (drule meta_mp)
